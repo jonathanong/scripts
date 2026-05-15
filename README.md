@@ -6,6 +6,7 @@ A collection of reusable scripts and CI tools. Each subdirectory is self-contain
 
 | Script | Description |
 |---|---|
+| [agents-md-max-size](agents-md-max-size/README.md) | CI script: fail if any `AGENTS.md` or `CLAUDE.md` file exceeds a configurable line/character count |
 | [codex-worktree](codex-worktree/README.md) | Shell function: create a git worktree under `.codex/worktrees/` and open Codex |
 | [git-hooks-pre-push-ahead-main](git-hooks-pre-push-ahead-main/README.md) | Git pre-push hook that blocks pushes if the branch is behind `main` |
 | [git-worktree-reset](git-worktree-reset/README.md) | Reset a linked worktree to `origin/main` without destroying and recreating it |
