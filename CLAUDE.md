@@ -1,0 +1,5 @@
+- All scripts should fail fast.
+  - If a dependency is required but is not installed, return an error with installation commands.
+- All scripts should provide proper messages for agents, including a follow-up action item.
+- Supports Linux and macOS.
+- After modifying any `.sh` file, run `shellcheck <file>` and fix any warnings before finishing.
