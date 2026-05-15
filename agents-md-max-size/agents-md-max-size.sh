@@ -31,13 +31,12 @@ fi
 
 fail=0
 
-while IFS= read -r file; do
-  base="$(basename "$file")"
-  [ "$base" = "AGENTS.md" ] || [ "$base" = "CLAUDE.md" ] || continue
+while IFS= read -r -d '' file; do
   [ -f "$file" ] || continue
 
-  lines=$(wc -l < "$file" | tr -d ' ')
-  chars=$(LC_ALL=C.UTF-8 wc -m < "$file" | tr -d ' ')
+  # Get both line and character counts in a single pass
+  # Use LC_ALL=C.UTF-8 to ensure consistent character counting
+  read -r lines chars < <(LC_ALL=C.UTF-8 wc -lm < "$file")
 
   if [ "$lines" -gt "$MAX_LINES" ]; then
     echo "::error file=$file::$file has $lines lines (max $MAX_LINES) — trim to keep agent context lean"
@@ -47,7 +46,7 @@ while IFS= read -r file; do
     echo "::error file=$file::$file has $chars characters (max $MAX_CHARS) — trim to keep agent context lean"
     fail=1
   fi
-done < <(git ls-files)
+done < <(git ls-files -z '**/AGENTS.md' '**/CLAUDE.md')
 
 if [ "$fail" -eq 0 ]; then
   echo "All AGENTS.md / CLAUDE.md files within size limits (lines ≤ $MAX_LINES, chars ≤ $MAX_CHARS)."
