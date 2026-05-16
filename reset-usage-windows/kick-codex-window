@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Space-separated list of Codex model IDs to kick (one request per model).
+# launchd provides CODEX_TIMER_MODELS; this default covers the two rate-limited plans.
+MODELS="${CODEX_TIMER_MODELS:-gpt-5.4-mini gpt-5.3-codex-spark}"
+
+WORKDIR="${TMPDIR:-/tmp}/codex-timer-kick"
+mkdir -p "$WORKDIR"
+
+if ! command -v codex >/dev/null 2>&1; then
+  echo "ERROR: codex not found in PATH: $PATH"
+  exit 127
+fi
+
+PROMPT='Reply with exactly: OK. Do not inspect files, run shell commands, or modify anything.'
+
+echo "-----"
+echo "Starting Codex kick at $(date)"
+echo "Models: $MODELS"
+
+for MODEL in $MODELS; do
+  echo "Kicking model: $MODEL"
+
+  codex exec \
+    --model "$MODEL" \
+    --sandbox read-only \
+    --skip-git-repo-check \
+    --ephemeral \
+    --color never \
+    --cd "$WORKDIR" \
+    "$PROMPT" >/dev/null
+
+  echo "Done: $MODEL"
+done
+
+echo "Finished Codex kick at $(date)"

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODEL="${CLAUDE_TIMER_MODEL:-haiku}"
+
+WORKDIR="${TMPDIR:-/tmp}/claude-timer-kick"
+mkdir -p "$WORKDIR"
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "ERROR: claude not found in PATH: $PATH"
+  exit 127
+fi
+
+PROMPT='Reply with exactly: OK. Do not inspect files, run shell commands, or modify anything.'
+
+echo "-----"
+echo "Starting Claude kick at $(date)"
+echo "Model: $MODEL"
+
+cd "$WORKDIR"
+
+claude \
+  --model "$MODEL" \
+  --bare \
+  --tools "" \
+  --max-turns 1 \
+  --output-format text \
+  --no-session-persistence \
+  -p "$PROMPT" >/dev/null
+
+echo "Finished Claude kick at $(date)"
