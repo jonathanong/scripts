@@ -14,7 +14,7 @@ Violations are reported as GitHub Actions annotations (`::error file=...`).
 ## Usage
 
 ```bash
-agents-md-max-size.sh [<max_lines>] [<max_chars>]
+./agents-md-max-size.sh [<max_lines>] [<max_chars>]
 ```
 
 Examples:

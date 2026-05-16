@@ -6,13 +6,19 @@ MAX_CHARS="${2:-12000}"
 
 for arg in "$MAX_LINES" "$MAX_CHARS"; do
   case "$arg" in
-    ''|0|*[!0-9]*)
+    ''|*[!0-9]*)
       echo "Usage: $0 [<max_lines>] [<max_chars>]" >&2
       echo "  max_lines  maximum number of lines (default: 200)" >&2
       echo "  max_chars  maximum number of characters (default: 12000)" >&2
       exit 2
       ;;
   esac
+  if [ "$arg" -le 0 ]; then
+    echo "Usage: $0 [<max_lines>] [<max_chars>]" >&2
+    echo "  max_lines  maximum number of lines (default: 200)" >&2
+    echo "  max_chars  maximum number of characters (default: 12000)" >&2
+    exit 2
+  fi
 done
 
 if ! command -v git >/dev/null 2>&1; then
@@ -55,7 +61,7 @@ while IFS= read -r -d '' file; do
     echo "::error file=$file::$file has $chars characters (max $MAX_CHARS) — trim to keep agent context lean"
     fail=1
   fi
-done < <(git -C "$REPO_ROOT" ls-files -z '**/AGENTS.md' '**/CLAUDE.md')
+done < <(git -C "$REPO_ROOT" ls-files -z ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md')
 
 if [ "$fail" -eq 0 ]; then
   echo "All AGENTS.md / CLAUDE.md files within size limits (lines ≤ $MAX_LINES, chars ≤ $MAX_CHARS)."

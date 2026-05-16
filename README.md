@@ -11,6 +11,7 @@ A collection of reusable scripts and CI tools. Each subdirectory is self-contain
 | [git-hooks-pre-push-ahead-main](git-hooks-pre-push-ahead-main/README.md) | Git pre-push hook that blocks pushes if the branch is behind `main` |
 | [git-worktree-reset](git-worktree-reset/README.md) | Reset a linked worktree to `origin/main` without destroying and recreating it |
 | [github-actions-dependabot-automerge](github-actions-dependabot-automerge/README.md) | GitHub Actions workflow: auto-approve and auto-merge Dependabot PRs (minor/patch only) |
+| [reset-usage-windows](reset-usage-windows/README.md) | macOS LaunchAgents: keep Claude and Codex usage windows warm by running a minimal request on a schedule |
 | [rust-max-lines-per-file](rust-max-lines-per-file/README.md) | CI script: fail if any Rust source file exceeds a configurable line count |
 | [rust-no-inline-tests](rust-no-inline-tests/README.md) | CI script: fail if any `src/` file contains an inline `#[cfg(test)] mod` block |
 | [tmux-window-name](tmux-window-name/README.md) | Set the tmux window name and pane title; no-ops outside tmux |
