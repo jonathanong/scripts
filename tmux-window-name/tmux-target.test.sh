@@ -88,6 +88,19 @@ assert_eq "$(window_name "$socket_a" "$pane_a")" alpha 'target window'
 assert_eq "$(pane_title "$socket_a" "$pane_a")" alpha 'target pane title'
 assert_eq "$(window_name "$socket_a" "$pane_other")" second 'viewed window unchanged'
 
+# Git repository selectors and runtime config inherited from a different
+# checkout must not collapse the caller, binding, and pane into one fake root.
+(
+  export GIT_DIR=$repo_a/.git GIT_WORK_TREE=$repo_a GIT_COMMON_DIR=$repo_a/.git
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0=$repo_a
+  expect_failure name_from "$repo_b" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" wrong-git-root
+  expect_failure name_from "$repo_b" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_b" wrong-live-pane
+  name_from "$repo_b" --socket "$socket_a" --pane "$pane_other" --worktree "$repo_b" valid-git-root
+)
+assert_eq "$(window_name "$socket_a" "$pane_a")" alpha 'wrong pane refused under Git overrides'
+assert_eq "$(window_name "$socket_a" "$pane_other")" valid-git-root 'correct pane accepted under Git overrides'
+name_from "$repo_b" --socket "$socket_a" --pane "$pane_other" --worktree "$repo_b" second
+
 # Installed command links may be absolute, relative, or a chain of both.
 # Sibling sources must be found beside the real script, not beside the link.
 mkdir "$test_dir/linkbin"
@@ -142,6 +155,12 @@ pane_linked=$(pane "$socket_a" test:linked)
 expect_failure name_from "$linked" --socket "$socket_a" --pane "$pane_a" --worktree "$linked" wrong
 name_from "$linked" --socket "$socket_a" --pane "$pane_linked" --worktree "$linked" linked-ok
 assert_eq "$(window_name "$socket_a" "$pane_linked")" linked-ok 'linked worktree target'
+(
+  export GIT_DIR=$repo_a/.git GIT_WORK_TREE=$repo_a GIT_COMMON_DIR=$repo_a/.git
+  expect_failure name_from "$linked" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" wrong-linked-root
+  name_from "$linked" --socket "$socket_a" --pane "$pane_linked" --worktree "$linked" linked-ok
+)
+assert_eq "$(window_name "$socket_a" "$pane_a")" explicit 'linked worktree override did not rename main pane'
 
 # Pane identity must continue to select its containing window after a move.
 tmux -S "$socket_a" move-pane -s "$pane_a" -t "$pane_other"
@@ -186,6 +205,11 @@ tmux -S "$socket_b" new-window -d -t test -n plain -c "$test_dir/plain" 'sleep 1
 pane_plain=$(pane "$socket_b" test:plain)
 name_from "$test_dir/plain" --socket "$socket_b" --pane "$pane_plain" --worktree "$test_dir/plain" plain-ok
 expect_failure name_from "$test_dir/other" --socket "$socket_b" --pane "$pane_plain" --worktree "$test_dir/plain" wrong
+(
+  export GIT_DIR=$repo_a/.git GIT_WORK_TREE=$repo_a GIT_COMMON_DIR=$repo_a/.git
+  name_from "$test_dir/plain" --socket "$socket_b" --pane "$pane_plain" --worktree "$test_dir/plain" plain-ok
+  expect_failure name_from "$test_dir/other" --socket "$socket_b" --pane "$pane_plain" --worktree "$test_dir/plain" wrong
+)
 assert_eq "$(window_name "$socket_b" "$pane_plain")" plain-ok 'non-Git mismatch refused'
 
 # Run inside an actual tmux pane, with its controlling TTY. This is the only
