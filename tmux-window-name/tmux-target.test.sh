@@ -131,7 +131,13 @@ assert_eq "$(window_name "$socket_a" "$pane_linked")" linked-ok 'unrelated windo
 # shellcheck disable=SC2016
 label='literal $(touch injected) ; $HOME `backtick`'
 name_from "$repo_a" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" "$label"
-assert_eq "$(window_name "$socket_a" "$pane_a")" "$label" 'literal window label'
+# tmux sanitizes stored window names differently across platforms. Compare the
+# helper with a direct tmux rename using the identical argument on this server.
+tmux -S "$socket_a" new-window -d -t test -n literal-baseline -c "$repo_a" 'sleep 120'
+pane_baseline=$(pane "$socket_a" test:literal-baseline)
+tmux -S "$socket_a" rename-window -t "$pane_baseline" -- "$label"
+assert_eq "$(window_name "$socket_a" "$pane_a")" "$(window_name "$socket_a" "$pane_baseline")" 'literal window label matches tmux behavior'
+assert_eq "$(pane_title "$socket_a" "$pane_a")" "$label" 'literal pane title'
 [ ! -e "$repo_a/injected" ] || fail 'label executed as a shell command'
 name_from "$repo_a" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" ''
 assert_eq "$(pane_title "$socket_a" "$pane_a")" '' 'empty name clears pane title'
