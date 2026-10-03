@@ -1,6 +1,11 @@
 # shellcheck shell=bash
+# shellcheck source-path=SCRIPTDIR
+# zsh sets $0 to the sourced file; Bash supplies BASH_SOURCE instead.
+CODEX_WORKTREE_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE:-$0}")" && pwd -P)
+
 codex-worktree() {
   local name base common_git_dir main_root worktrees_dir dir branch
+  local target_socket='' target_pane='' target_worktree=''
 
   if ! command -v git >/dev/null 2>&1; then
     printf 'codex-worktree: git is required. Install: brew install git (macOS) or apt-get install git (Linux)\n' >&2
@@ -64,5 +69,15 @@ codex-worktree() {
   git -C "$main_root" worktree add -b "$branch" "$dir" "$base" || return
   cd -- "$dir" || return
 
-  codex
+  # Capture the real launching terminal, never a pane inherited by a shared runner.
+  # shellcheck source=../tmux-window-name/tmux-target.sh
+  source "$CODEX_WORKTREE_SCRIPT_DIR/../tmux-window-name/tmux-target.sh" || return
+  if tmux_target_resolve "$dir" '' '' ''; then
+    target_socket=$tmux_target_socket
+    target_pane=$tmux_target_pane
+    target_worktree=$tmux_target_worktree
+  fi
+  # Empty values clear stale dedicated bindings for the child without exporting
+  # pane identities into the interactive shell or blocking ordinary Codex work.
+  AGENT_TMUX_SOCKET="$target_socket" AGENT_TMUX_PANE="$target_pane" AGENT_TMUX_WORKTREE="$target_worktree" codex
 }

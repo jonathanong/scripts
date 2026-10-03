@@ -27,6 +27,10 @@ codex-worktree my-feature origin/develop
 
 The worktree is created at `<repo-root>/.codex/worktrees/<name>` on branch `codex/<name>`. The function `cd`s into it and launches `codex`.
 
+When launched from a real tmux terminal, it passes a verified socket, pane, and worktree binding to the Codex process as `AGENT_TMUX_SOCKET`, `AGENT_TMUX_PANE`, and `AGENT_TMUX_WORKTREE`. It matches the controlling terminal rather than trusting inherited `TMUX_PANE` and does not change the parent shell's binding variables.
+
+Without a verified terminal, Codex still starts with those binding values cleared. Background or GUI callers must pass an explicit target to the [window-name helper](../tmux-window-name/README.md); it refuses unbound tmux updates. Keep the sibling `tmux-window-name` directory installed with this script.
+
 ## Notes
 
 - Name must match `[A-Za-z0-9._-]`.
