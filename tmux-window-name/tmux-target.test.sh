@@ -104,14 +104,22 @@ name_from "$repo_b" --socket "$socket_a" --pane "$pane_other" --worktree "$repo_
 # A repository trusted through ordinary global safe.directory configuration
 # remains discoverable, even when ownership validation would otherwise fail.
 # The wrapper enables Git's ownership test after the resolver has scrubbed its
-# inherited Git environment; it still executes the real Git binary.
+# inherited Git environment. Ignore machine system config in this fixture, as
+# it may already trust every path; normal global config still loads from HOME.
 mkdir "$repo_a/nested" "$test_dir/trust-home" "$test_dir/gitbin"
 real_git=$(command -v git)
-printf '#!/usr/bin/env bash\nGIT_TEST_ASSUME_DIFFERENT_OWNER=1 exec %q "$@"\n' "$real_git" >"$test_dir/gitbin/git"
+printf '#!/usr/bin/env bash\nGIT_CONFIG_NOSYSTEM=1 GIT_TEST_ASSUME_DIFFERENT_OWNER=1 exec %q "$@"\n' "$real_git" >"$test_dir/gitbin/git"
 chmod +x "$test_dir/gitbin/git"
 (
   export HOME=$test_dir/trust-home PATH="$test_dir/gitbin:$PATH"
-  expect_failure name_from "$repo_a/nested" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" untrusted
+  # Some packaged Git builds do not honor this internal ownership-test seam.
+  # Probe with an empty global config before asserting the refusal.
+  if GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TEST_ASSUME_DIFFERENT_OWNER=1 \
+      "$real_git" -C "$repo_a/nested" rev-parse --show-toplevel >/dev/null 2>&1; then
+    printf 'Git ownership-test seam unavailable; skipping untrusted refusal assertion\n' >&2
+  else
+    expect_failure name_from "$repo_a/nested" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" untrusted
+  fi
   "$real_git" config --file "$HOME/.gitconfig" --add safe.directory "$repo_a"
   name_from "$repo_a/nested" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" trusted
 )
