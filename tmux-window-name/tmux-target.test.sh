@@ -101,6 +101,23 @@ assert_eq "$(window_name "$socket_a" "$pane_a")" alpha 'wrong pane refused under
 assert_eq "$(window_name "$socket_a" "$pane_other")" valid-git-root 'correct pane accepted under Git overrides'
 name_from "$repo_b" --socket "$socket_a" --pane "$pane_other" --worktree "$repo_b" second
 
+# A repository trusted through ordinary global safe.directory configuration
+# remains discoverable, even when ownership validation would otherwise fail.
+# The wrapper enables Git's ownership test after the resolver has scrubbed its
+# inherited Git environment; it still executes the real Git binary.
+mkdir "$repo_a/nested" "$test_dir/trust-home" "$test_dir/gitbin"
+real_git=$(command -v git)
+printf '#!/usr/bin/env bash\nGIT_TEST_ASSUME_DIFFERENT_OWNER=1 exec %q "$@"\n' "$real_git" >"$test_dir/gitbin/git"
+chmod +x "$test_dir/gitbin/git"
+(
+  export HOME=$test_dir/trust-home PATH="$test_dir/gitbin:$PATH"
+  expect_failure name_from "$repo_a/nested" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" untrusted
+  "$real_git" config --file "$HOME/.gitconfig" --add safe.directory "$repo_a"
+  name_from "$repo_a/nested" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" trusted
+)
+assert_eq "$(window_name "$socket_a" "$pane_a")" trusted 'global safe.directory retains Git root discovery'
+name_from "$repo_a" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" alpha
+
 # Installed command links may be absolute, relative, or a chain of both.
 # Sibling sources must be found beside the real script, not beside the link.
 mkdir "$test_dir/linkbin"
@@ -253,6 +270,8 @@ exec sleep 30
 DRIVER
 cat >"$test_dir/launcher-driver.zsh" <<'DRIVER'
 #!/usr/bin/env zsh
+emulate zsh
+unsetopt functionargzero
 export PATH="$TEST_BIN:$PATH" FAKE_CODEX_LOG=$TEST_CHILD_LOG
 export AGENT_TMUX_SOCKET=stale-socket AGENT_TMUX_PANE=%999 AGENT_TMUX_WORKTREE=stale-worktree
 source "$TEST_LAUNCHER"
@@ -261,6 +280,25 @@ printf '%s\n' "$?" >"$TEST_STATUS"
 printf '%s\n' "$AGENT_TMUX_SOCKET" "$AGENT_TMUX_PANE" "$AGENT_TMUX_WORKTREE" >"$TEST_PARENT_LOG"
 exec sleep 30
 DRIVER
+
+# An incomplete installation must fail before fetch/worktree creation or cd.
+mkdir -p "$test_dir/orphan/codex-worktree"
+cp "$launcher" "$test_dir/orphan/codex-worktree/codex-worktree.sh"
+before_remote_ref=$(git -C "$repo_a" rev-parse --verify refs/remotes/origin/main 2>/dev/null || true)
+(
+  cd -- "$repo_a"
+  original_dir=$PWD
+  # shellcheck disable=SC1091
+  source "$test_dir/orphan/codex-worktree/codex-worktree.sh"
+  export PATH="$test_dir/bin:$PATH"
+  if codex-worktree feature-missing-helper >"$test_dir/missing-helper.log" 2>&1; then
+    fail 'launcher succeeded without its sibling helper'
+  fi
+  assert_eq "$PWD" "$original_dir" 'missing helper preserves caller directory'
+)
+[ ! -e "$repo_a/.codex/worktrees/feature-missing-helper" ] || fail 'missing helper created worktree'
+assert_eq "$(git -C "$repo_a" branch --list codex/feature-missing-helper)" '' 'missing helper created no branch'
+assert_eq "$(git -C "$repo_a" rev-parse --verify refs/remotes/origin/main 2>/dev/null || true)" "$before_remote_ref" 'missing helper did not fetch'
 
 ln -s "$launcher" "$test_dir/linkbin/launcher-absolute"
 ln -s launcher-absolute "$test_dir/linkbin/launcher-relative"

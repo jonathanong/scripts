@@ -1,9 +1,15 @@
 # shellcheck shell=bash
 # shellcheck source-path=SCRIPTDIR
-# zsh sets $0 to the sourced file; Bash supplies BASH_SOURCE instead.
+# zsh's %x identifies the sourced file even when FUNCTION_ARGZERO is disabled.
+# Bash supplies BASH_SOURCE instead.
 # Resolve symlink chains before looking for the sibling tmux helper.
 CODEX_WORKTREE_SCRIPT_DIR=$(
-  script_path=${BASH_SOURCE:-$0}
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    # shellcheck disable=SC2296
+    script_path=${(%):-%x}
+  else
+    script_path=${BASH_SOURCE[0]}
+  fi
   link_hops=0
   while [ -L "$script_path" ]; do
     if [ "$link_hops" -ge 40 ]; then
@@ -29,6 +35,15 @@ CODEX_WORKTREE_SCRIPT_DIR=$(
 codex-worktree() {
   local name base common_git_dir main_root worktrees_dir dir branch
   local target_socket='' target_pane='' target_worktree=''
+
+  # A missing sibling helper must fail before fetching, creating a worktree,
+  # or changing the caller's directory.
+  if [ ! -r "$CODEX_WORKTREE_SCRIPT_DIR/../tmux-window-name/tmux-target.sh" ]; then
+    printf 'codex-worktree: tmux target helper is missing or unreadable: %s\n' "$CODEX_WORKTREE_SCRIPT_DIR/../tmux-window-name/tmux-target.sh" >&2
+    return 1
+  fi
+  # shellcheck disable=SC1091
+  source "$CODEX_WORKTREE_SCRIPT_DIR/../tmux-window-name/tmux-target.sh" || return
 
   if ! command -v git >/dev/null 2>&1; then
     printf 'codex-worktree: git is required. Install: brew install git (macOS) or apt-get install git (Linux)\n' >&2
@@ -94,8 +109,6 @@ codex-worktree() {
 
   # Capture the real launching terminal, never a pane inherited by a shared runner.
   tmux_target_socket='' tmux_target_pane='' tmux_target_worktree=''
-  # shellcheck disable=SC1091
-  source "$CODEX_WORKTREE_SCRIPT_DIR/../tmux-window-name/tmux-target.sh" || return
   if tmux_target_resolve "$dir" '' '' ''; then
     target_socket=$tmux_target_socket
     target_pane=$tmux_target_pane
