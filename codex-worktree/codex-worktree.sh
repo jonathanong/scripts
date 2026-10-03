@@ -1,7 +1,30 @@
 # shellcheck shell=bash
 # shellcheck source-path=SCRIPTDIR
 # zsh sets $0 to the sourced file; Bash supplies BASH_SOURCE instead.
-CODEX_WORKTREE_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE:-$0}")" && pwd -P)
+# Resolve symlink chains before looking for the sibling tmux helper.
+CODEX_WORKTREE_SCRIPT_DIR=$(
+  script_path=${BASH_SOURCE:-$0}
+  link_hops=0
+  while [ -L "$script_path" ]; do
+    if [ "$link_hops" -ge 40 ]; then
+      printf 'codex-worktree: symlink chain is too long; source the real script path.\n' >&2
+      exit 1
+    fi
+    link_dir=$(cd -- "$(dirname -- "$script_path")" && pwd -P) || exit 1
+    link_target=$(readlink "$script_path") || exit 1
+    if [[ $link_target = /* ]]; then
+      script_path=$link_target
+    else
+      script_path=$link_dir/$link_target
+    fi
+    link_hops=$((link_hops + 1))
+  done
+  if [ ! -f "$script_path" ]; then
+    printf 'codex-worktree: sourced script target is missing; source the real script path.\n' >&2
+    exit 1
+  fi
+  cd -- "$(dirname -- "$script_path")" && pwd -P
+) || return 1
 
 codex-worktree() {
   local name base common_git_dir main_root worktrees_dir dir branch
@@ -70,7 +93,8 @@ codex-worktree() {
   cd -- "$dir" || return
 
   # Capture the real launching terminal, never a pane inherited by a shared runner.
-  # shellcheck source=../tmux-window-name/tmux-target.sh
+  tmux_target_socket='' tmux_target_pane='' tmux_target_worktree=''
+  # shellcheck disable=SC1091
   source "$CODEX_WORKTREE_SCRIPT_DIR/../tmux-window-name/tmux-target.sh" || return
   if tmux_target_resolve "$dir" '' '' ''; then
     target_socket=$tmux_target_socket

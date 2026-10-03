@@ -46,6 +46,11 @@ name_from() {
   shift
   (cd -- "$directory" && "$name_helper" "$@")
 }
+name_path_from() {
+  local directory=$1 helper_path=$2
+  shift 2
+  (cd -- "$directory" && "$helper_path" "$@")
+}
 expect_failure() {
   if "$@" >"$test_dir/last.out" 2>"$test_dir/last.err"; then
     fail "command unexpectedly succeeded: $*"
@@ -82,6 +87,25 @@ name_from "$repo_a" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" a
 assert_eq "$(window_name "$socket_a" "$pane_a")" alpha 'target window'
 assert_eq "$(pane_title "$socket_a" "$pane_a")" alpha 'target pane title'
 assert_eq "$(window_name "$socket_a" "$pane_other")" second 'viewed window unchanged'
+
+# Installed command links may be absolute, relative, or a chain of both.
+# Sibling sources must be found beside the real script, not beside the link.
+mkdir "$test_dir/linkbin"
+ln -s "$name_helper" "$test_dir/linkbin/name-absolute"
+ln -s name-absolute "$test_dir/linkbin/name-relative"
+for linked_helper in "$test_dir/linkbin/name-absolute" "$test_dir/linkbin/name-relative"; do
+  (
+    unset TMUX TMUX_PANE AGENT_TMUX_SOCKET AGENT_TMUX_PANE AGENT_TMUX_WORKTREE
+    expect_status 0 name_path_from "$repo_a" "$linked_helper" outside
+  )
+  name_path_from "$repo_a" "$linked_helper" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" linked-helper
+  assert_eq "$(window_name "$socket_a" "$pane_a")" linked-helper 'linked helper targets real sibling'
+done
+ln -s missing-target "$test_dir/linkbin/name-broken"
+ln -s name-cycle-b "$test_dir/linkbin/name-cycle-a"
+ln -s name-cycle-a "$test_dir/linkbin/name-cycle-b"
+expect_failure name_path_from "$repo_a" "$test_dir/linkbin/name-broken" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" wrong
+expect_failure name_path_from "$repo_a" "$test_dir/linkbin/name-cycle-a" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" wrong
 
 # An entire CLI tuple overrides a stale ambient dedicated tuple and TMUX_PANE.
 (
@@ -136,8 +160,9 @@ name_from "$repo_a" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" "
 tmux -S "$socket_a" new-window -d -t test -n literal-baseline -c "$repo_a" 'sleep 120'
 pane_baseline=$(pane "$socket_a" test:literal-baseline)
 tmux -S "$socket_a" rename-window -t "$pane_baseline" -- "$label"
+tmux -S "$socket_a" select-pane -t "$pane_baseline" -T "$label"
 assert_eq "$(window_name "$socket_a" "$pane_a")" "$(window_name "$socket_a" "$pane_baseline")" 'literal window label matches tmux behavior'
-assert_eq "$(pane_title "$socket_a" "$pane_a")" "$label" 'literal pane title'
+assert_eq "$(pane_title "$socket_a" "$pane_a")" "$(pane_title "$socket_a" "$pane_baseline")" 'literal pane title matches tmux behavior'
 [ ! -e "$repo_a/injected" ] || fail 'label executed as a shell command'
 name_from "$repo_a" --socket "$socket_a" --pane "$pane_a" --worktree "$repo_a" ''
 assert_eq "$(pane_title "$socket_a" "$pane_a")" '' 'empty name clears pane title'
@@ -213,24 +238,32 @@ printf '%s\n' "$AGENT_TMUX_SOCKET" "$AGENT_TMUX_PANE" "$AGENT_TMUX_WORKTREE" >"$
 exec sleep 30
 DRIVER
 
-for shell_name in bash zsh; do
-  result_prefix=$test_dir/launch-$shell_name
-  test_name=feature-$shell_name
+ln -s "$launcher" "$test_dir/linkbin/launcher-absolute"
+ln -s launcher-absolute "$test_dir/linkbin/launcher-relative"
+for launch_case in bash zsh bash-absolute zsh-relative; do
+  case $launch_case in
+    bash) shell_name=bash; driver_extension='sh'; test_launcher=$launcher ;;
+    zsh) shell_name=zsh; driver_extension=zsh; test_launcher=$launcher ;;
+    bash-absolute) shell_name=bash; driver_extension='sh'; test_launcher=$test_dir/linkbin/launcher-absolute ;;
+    zsh-relative) shell_name=zsh; driver_extension=zsh; test_launcher=$test_dir/linkbin/launcher-relative ;;
+  esac
+  result_prefix=$test_dir/launch-$launch_case
+  test_name=feature-$launch_case
   tmux -S "$socket_a" set-environment -t test TEST_BIN "$test_dir/bin"
-  tmux -S "$socket_a" set-environment -t test TEST_LAUNCHER "$launcher"
+  tmux -S "$socket_a" set-environment -t test TEST_LAUNCHER "$test_launcher"
   tmux -S "$socket_a" set-environment -t test TEST_NAME "$test_name"
   tmux -S "$socket_a" set-environment -t test TEST_CHILD_LOG "$result_prefix.child"
   tmux -S "$socket_a" set-environment -t test TEST_PARENT_LOG "$result_prefix.parent"
   tmux -S "$socket_a" set-environment -t test TEST_STATUS "$result_prefix.status"
   tmux -S "$socket_a" set-environment -t test TEST_LOG "$result_prefix.log"
-  tmux -S "$socket_a" new-window -d -t test -n "$test_name" -c "$repo_a" "$shell_name '$test_dir/launcher-driver.$([ "$shell_name" = bash ] && printf sh || printf zsh)'"
+  tmux -S "$socket_a" new-window -d -t test -n "$test_name" -c "$repo_a" "$shell_name '$test_dir/launcher-driver.$driver_extension'"
   wait_for_file "$result_prefix.status"
-  assert_eq "$(cat "$result_prefix.status")" 0 "$shell_name launcher succeeds"
+  assert_eq "$(cat "$result_prefix.status")" 0 "$launch_case launcher succeeds"
   launch_pane=$(pane "$socket_a" "test:$test_name")
-  assert_eq "$(sed -n '1p' "$result_prefix.child")" "$socket_a" "$shell_name child socket"
-  assert_eq "$(sed -n '2p' "$result_prefix.child")" "$launch_pane" "$shell_name child pane"
-  assert_eq "$(sed -n '3p' "$result_prefix.child")" "$repo_a/.codex/worktrees/$test_name" "$shell_name child worktree"
-  assert_eq "$(sed -n '1p' "$result_prefix.parent")" stale-socket "$shell_name parent binding untouched"
+  assert_eq "$(sed -n '1p' "$result_prefix.child")" "$socket_a" "$launch_case child socket"
+  assert_eq "$(sed -n '2p' "$result_prefix.child")" "$launch_pane" "$launch_case child pane"
+  assert_eq "$(sed -n '3p' "$result_prefix.child")" "$repo_a/.codex/worktrees/$test_name" "$launch_case child worktree"
+  assert_eq "$(sed -n '1p' "$result_prefix.parent")" stale-socket "$launch_case parent binding untouched"
 done
 
 # Without a trustworthy terminal, the launcher still starts Codex but strips
